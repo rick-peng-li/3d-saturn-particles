@@ -7,11 +7,12 @@ let coreData = [];
 
 // State
 const state = {
-    targetZoom: 0.0, // Start far
-    currentZoom: 0.0,
+    targetZoom: 0.35,
+    currentZoom: 0.35,
     handDetected: false,
     chaosMode: false,
-    firstResultReceived: false
+    firstResultReceived: false,
+    firstFrameRendered: false
 };
 
 // Configuration
@@ -22,8 +23,8 @@ const CONFIG = {
     ringOuter: 28,
     chaosThreshold: 0.85,
     maxZoom: 20, // Closer for more impact
-    minZoom: 120, // Further for dark start
-    baseBrightness: 0.1, // Dark when far
+    minZoom: 80,
+    baseBrightness: 0.45,
     maxBrightness: 1.5 // Bright when close
 };
 
@@ -46,12 +47,12 @@ window.onload = () => {
 function initThree() {
     scene = new THREE.Scene();
     // Dark fog for depth
-    scene.fog = new THREE.FogExp2(0x050505, 0.015);
+    scene.fog = new THREE.FogExp2(0x050505, 0.008);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = CONFIG.minZoom;
-    camera.position.y = 10;
-    camera.lookAt(0, -6, 0); // Look slightly below center to move planet up
+    camera.position.y = 6;
+    camera.lookAt(0, 0, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false }); // Antialias off for post-processing perf
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -198,7 +199,7 @@ function createParticles() {
 function initHandTracking() {
     const videoElement = document.getElementById('input_video');
     const statusElement = document.getElementById('status');
-    const loadingElement = document.getElementById('loading');
+    let cameraStartFailed = false;
 
     const hands = new Hands({locateFile: (file) => {
         // Use unpkg which is generally more reliable in some regions or fallback to standard
@@ -234,7 +235,6 @@ function initHandTracking() {
         .then(() => {
             console.log("Camera started");
             statusElement.innerText = "模型加载中...请稍候";
-            // Do not hide loading yet, wait for first result or timeout
             
             // Timeout to hide loading if it takes too long (but warn user)
             setTimeout(() => {
@@ -247,9 +247,9 @@ function initHandTracking() {
             }, 8000);
         })
         .catch(err => {
+            cameraStartFailed = true;
             console.error("Camera error:", err);
             statusElement.innerText = "摄像头启动失败，请检查权限";
-            loadingElement.innerHTML = "<p>摄像头启动失败<br>请检查权限或使用HTTPS</p>";
         });
 }
 
@@ -260,7 +260,7 @@ function onHandResults(results) {
     // Mark as initialized on first result
     if (!state.firstResultReceived) {
         state.firstResultReceived = true;
-        loadingElement.classList.add('hidden');
+        if (loadingElement) loadingElement.classList.add('hidden');
         console.log("First MediaPipe result received");
     }
     
@@ -312,7 +312,7 @@ function onHandResults(results) {
         statusElement.style.color = "#ffaa00";
         // Do not reset targetZoom immediately, let it stay or drift back slowly?
         // Let's drift back to default (0.2) if no hand
-        state.targetZoom = state.targetZoom * 0.95 + 0.2 * 0.05;
+        state.targetZoom = state.targetZoom * 0.95 + 0.35 * 0.05;
     }
 }
 
@@ -330,7 +330,7 @@ function animate() {
     // 0 -> 1
     const targetZ = CONFIG.minZoom - (state.currentZoom * (CONFIG.minZoom - CONFIG.maxZoom));
     camera.position.z = targetZ;
-    camera.lookAt(0, -6, 0); // Ensure camera always looks at the offset target
+    camera.lookAt(0, 0, 0);
 
     // 3. Brightness Physics
     // Small (dim) -> Large (bright)
@@ -358,6 +358,19 @@ function animate() {
 
     // Use composer instead of renderer
     composer.render();
+
+    if (!state.firstFrameRendered) {
+        state.firstFrameRendered = true;
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.classList.add('hidden');
+            setTimeout(() => {
+                if (loadingElement.classList.contains('hidden')) {
+                    loadingElement.style.display = 'none';
+                }
+            }, 900);
+        }
+    }
 }
 
 function updateRings(delta) {
