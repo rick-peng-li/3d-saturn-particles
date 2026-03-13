@@ -4,6 +4,8 @@ let coreSystem, ringSystem;
 let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
+let photoSprites = []; // Store photo sprites with halo effect
+let photoData = []; // Store orbital data for photos
 
 // State
 const state = {
@@ -33,6 +35,7 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initPhotoUpload();
     animate();
     
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
@@ -355,6 +358,7 @@ function animate() {
     // 5. Update Particles
     updateRings(delta);
     updateCore(delta);
+    updatePhotos(delta);
 
     // Use composer instead of renderer
     composer.render();
@@ -480,4 +484,175 @@ function updateCore(delta) {
             coreSystem.geometry.attributes.position.needsUpdate = true;
         }
     }
+}
+
+function initPhotoUpload() {
+    const uploadInput = document.getElementById('photo-upload');
+    
+    uploadInput.addEventListener('change', (event) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+        
+        Array.from(files).forEach((file, index) => {
+            if (!file.type.startsWith('image/')) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                createPhotoSprite(e.target.result, index);
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        uploadInput.value = '';
+    });
+}
+
+function createPhotoSprite(imageUrl, index) {
+    const textureLoader = new THREE.TextureLoader();
+    
+    textureLoader.load(imageUrl, (texture) => {
+        const aspectRatio = texture.image.width / texture.image.height;
+        const baseSize = 2.5;
+        const width = aspectRatio >= 1 ? baseSize : baseSize * aspectRatio;
+        const height = aspectRatio >= 1 ? baseSize / aspectRatio : baseSize;
+        
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const padding = 40;
+        const glowSize = 30;
+        
+        canvas.width = texture.image.width + padding * 2 + glowSize * 2;
+        canvas.height = texture.image.height + padding * 2 + glowSize * 2;
+        
+        ctx.shadowColor = 'rgba(255, 220, 150, 0.8)';
+        ctx.shadowBlur = glowSize;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.beginPath();
+        const cornerRadius = 15;
+        const x = padding + glowSize;
+        const y = padding + glowSize;
+        const w = texture.image.width;
+        const h = texture.image.height;
+        ctx.roundRect(x - 5, y - 5, w + 10, h + 10, cornerRadius);
+        ctx.fill();
+        
+        ctx.shadowBlur = glowSize * 1.5;
+        ctx.shadowColor = 'rgba(255, 200, 100, 0.9)';
+        for (let i = 0; i < 3; i++) {
+            ctx.fill();
+        }
+        
+        ctx.shadowBlur = 0;
+        ctx.drawImage(texture.image, x, y, w, h);
+        
+        const glowTexture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({
+            map: glowTexture,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            opacity: 0.95
+        });
+        
+        const sprite = new THREE.Sprite(material);
+        
+        const r = CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner) * 0.8;
+        const theta = Math.random() * Math.PI * 2;
+        const photoY = (Math.random() - 0.5) * 1.5;
+        
+        const speed = 3.0 / Math.pow(r, 1.5);
+        
+        sprite.scale.set(width * 1.2, height * 1.2, 1);
+        sprite.position.set(
+            r * Math.cos(theta),
+            photoY,
+            r * Math.sin(theta)
+        );
+        
+        sprite.userData = {
+            baseScale: width * 1.2,
+            baseHeight: height * 1.2
+        };
+        
+        const photoGroup = new THREE.Group();
+        photoGroup.add(sprite);
+        photoGroup.rotation.x = Math.PI * 0.1;
+        photoGroup.rotation.z = Math.PI * 0.05;
+        
+        scene.add(photoGroup);
+        
+        photoSprites.push({
+            sprite: sprite,
+            group: photoGroup
+        });
+        
+        photoData.push({
+            r: r,
+            theta: theta,
+            y: photoY,
+            speed: speed,
+            originalY: photoY
+        });
+        
+        const statusElement = document.getElementById('status');
+        statusElement.innerText = `📷 已添加 ${photoSprites.length} 张照片`;
+        statusElement.style.color = "#ffd700";
+        setTimeout(() => {
+            statusElement.innerText = "等待手势指令...";
+            statusElement.style.color = "#ffaa00";
+        }, 2000);
+    });
+}
+
+function updatePhotos(delta) {
+    if (photoSprites.length === 0) return;
+    
+    const time = clock.getElapsedTime();
+    
+    photoSprites.forEach((item, index) => {
+        const data = photoData[index];
+        if (!data) return;
+        
+        data.theta += data.speed * delta * 0.5;
+        
+        let x, y, z;
+        
+        if (state.chaosMode) {
+            const chaosIntensity = (state.currentZoom - CONFIG.chaosThreshold) / (1 - CONFIG.chaosThreshold);
+            const explodeFactor = chaosIntensity * 15;
+            const noiseAmp = chaosIntensity * 1.5;
+            
+            const bx = data.r * Math.cos(data.theta);
+            const bz = data.r * Math.sin(data.theta);
+            
+            x = bx + Math.cos(data.theta) * explodeFactor;
+            z = bz + Math.sin(data.theta) * explodeFactor;
+            y = data.y + (Math.random() - 0.5) * explodeFactor * 0.5;
+            
+            x += (Math.random() - 0.5) * noiseAmp;
+            y += (Math.random() - 0.5) * noiseAmp;
+            z += (Math.random() - 0.5) * noiseAmp;
+        } else {
+            x = data.r * Math.cos(data.theta);
+            y = data.y + Math.sin(time * 0.5 + index) * 0.2;
+            z = data.r * Math.sin(data.theta);
+        }
+        
+        item.sprite.position.set(x, y, z);
+        
+        const baseScale = item.sprite.userData.baseScale;
+        const baseHeight = item.sprite.userData.baseHeight;
+        const scaleMultiplier = 1 + state.currentZoom * 0.8;
+        item.sprite.scale.set(
+            baseScale * scaleMultiplier,
+            baseHeight * scaleMultiplier,
+            1
+        );
+        
+        const baseOpacity = 0.95;
+        const glowPulse = Math.sin(time * 2 + index * 0.5) * 0.1 + 0.9;
+        item.sprite.material.opacity = baseOpacity * glowPulse;
+    });
 }
