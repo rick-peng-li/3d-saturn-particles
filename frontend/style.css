@@ -78,6 +78,44 @@ h1 {
     border-color: rgba(255, 255, 255, 0.5);
 }
 
+.upload-section {
+    margin: 16px 0;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.upload-btn {
+    display: block;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, rgba(100, 150, 255, 0.3), rgba(150, 100, 255, 0.3));
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    text-align: center;
+    width: 100%;
+}
+
+.upload-btn:hover {
+    background: linear-gradient(135deg, rgba(100, 150, 255, 0.5), rgba(150, 100, 255, 0.5));
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(100, 150, 255, 0.3);
+}
+
+.upload-hint {
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+
 #status {
     margin-top: 16px;
     font-size: 0.8rem;
