@@ -4,6 +4,8 @@ let coreSystem, ringSystem;
 let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
+let photoMeshes = []; // Store photo meshes
+let photoData = []; // Store photo orbit data
 
 // State
 const state = {
@@ -25,7 +27,9 @@ const CONFIG = {
     maxZoom: 20, // Closer for more impact
     minZoom: 80,
     baseBrightness: 0.45,
-    maxBrightness: 1.5 // Bright when close
+    maxBrightness: 1.5, // Bright when close
+    photoSize: 1.5, // Size of photos on the ring
+    photoGlowIntensity: 2.0 // Glow intensity for photos
 };
 
 // Initialize
@@ -33,8 +37,9 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initPhotoUpload();
     animate();
-    
+
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen();
@@ -355,6 +360,7 @@ function animate() {
     // 5. Update Particles
     updateRings(delta);
     updateCore(delta);
+    updatePhotos(delta);
 
     // Use composer instead of renderer
     composer.render();
@@ -452,14 +458,14 @@ function updateCore(delta) {
 
         for(let i=0; i < CONFIG.coreCount; i++) {
             const data = coreData[i];
-            
+
             // Core explosion: push out from center
             // data.originalX/Y/Z is the vector from center
-            
+
             const px = data.originalX * (1 + explode);
             const py = data.originalY * (1 + explode);
             const pz = data.originalZ * (1 + explode);
-            
+
             // Add jitter
             positions[i*3] = px + (Math.random() - 0.5) * jitter;
             positions[i*3+1] = py + (Math.random() - 0.5) * jitter;
@@ -479,5 +485,252 @@ function updateCore(delta) {
             }
             coreSystem.geometry.attributes.position.needsUpdate = true;
         }
+    }
+}
+
+// Photo Upload and Management
+function initPhotoUpload() {
+    const fileInput = document.getElementById('photo-upload');
+    const statusElement = document.getElementById('status');
+
+    fileInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        if (files.length === 0) return;
+
+        statusElement.innerText = `正在加载 ${files.length} 张照片...`;
+        statusElement.style.color = '#00aaff';
+
+        Array.from(files).forEach((file, index) => {
+            if (file.type.startsWith('image/')) {
+                setTimeout(() => {
+                    loadPhoto(file);
+                }, index * 200); // Stagger loading
+            }
+        });
+
+        // Reset input
+        setTimeout(() => {
+            fileInput.value = '';
+            statusElement.innerText = `已添加 ${files.length} 张照片到土星环`;
+            statusElement.style.color = '#00ff88';
+        }, files.length * 200 + 500);
+    });
+}
+
+function loadPhoto(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            createPhotoSprite(img);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function createPhotoSprite(image) {
+    // Create a canvas to process the image with glow effect
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Calculate size maintaining aspect ratio
+    const maxSize = 256;
+    let width = image.width;
+    let height = image.height;
+
+    if (width > height) {
+        if (width > maxSize) {
+            height *= maxSize / width;
+            width = maxSize;
+        }
+    } else {
+        if (height > maxSize) {
+            width *= maxSize / height;
+            height = maxSize;
+        }
+    }
+
+    // Add padding for glow
+    const padding = 40;
+    canvas.width = width + padding * 2;
+    canvas.height = height + padding * 2;
+
+    // Draw glow effect
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+
+    // Create radial gradient for glow
+    const gradient = ctx.createRadialGradient(centerX, centerY, Math.max(width, height) / 2, centerX, centerY, Math.max(width, height) / 2 + padding);
+    gradient.addColorStop(0, 'rgba(255, 220, 150, 0.8)');
+    gradient.addColorStop(0.5, 'rgba(255, 180, 100, 0.4)');
+    gradient.addColorStop(1, 'rgba(255, 150, 50, 0)');
+
+    // Draw glow
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw additional outer glow layers
+    for (let i = 3; i > 0; i--) {
+        ctx.save();
+        ctx.globalAlpha = 0.3 * i;
+        ctx.shadowColor = `rgba(255, 200, 100, ${0.5 * i})`;
+        ctx.shadowBlur = 20 * i;
+        ctx.drawImage(image, padding, padding, width, height);
+        ctx.restore();
+    }
+
+    // Draw the main image
+    ctx.drawImage(image, padding, padding, width, height);
+
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    // Create sprite material with the texture
+    const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending
+    });
+
+    // Create sprite
+    const sprite = new THREE.Sprite(material);
+    const aspectRatio = canvas.width / canvas.height;
+    const baseSize = CONFIG.photoSize;
+    sprite.scale.set(baseSize * aspectRatio, baseSize, 1);
+
+    // Position on the ring with random distribution
+    const r = CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner);
+    const theta = Math.random() * Math.PI * 2;
+    const y = (Math.random() - 0.5) * 0.8;
+
+    // Calculate initial position matching ring tilt
+    const ringTiltX = Math.PI * 0.1;
+    const ringTiltZ = Math.PI * 0.05;
+
+    // Base position on ring plane
+    const baseX = r * Math.cos(theta);
+    const baseZ = r * Math.sin(theta);
+
+    // Apply ring rotation
+    const cosX = Math.cos(ringTiltX);
+    const sinX = Math.sin(ringTiltX);
+    const cosZ = Math.cos(ringTiltZ);
+    const sinZ = Math.sin(ringTiltZ);
+
+    // Rotate around X then Z
+    const y1 = y * cosX - baseZ * sinX;
+    const z1 = y * sinX + baseZ * cosX;
+
+    const x2 = baseX * cosZ - y1 * sinZ;
+    const y2 = baseX * sinZ + y1 * cosZ;
+
+    sprite.position.set(x2, y2, z1);
+
+    // Store orbit data for animation
+    const speed = 3.0 / Math.pow(r, 1.5); // Slightly slower than particles for visual interest
+
+    photoData.push({
+        r: r,
+        theta: theta,
+        y: y,
+        speed: speed,
+        baseX: baseX,
+        baseZ: baseZ,
+        ringTiltX: ringTiltX,
+        ringTiltZ: ringTiltZ
+    });
+
+    photoMeshes.push(sprite);
+    scene.add(sprite);
+}
+
+function updatePhotos(delta) {
+    const time = clock.getElapsedTime();
+
+    for (let i = 0; i < photoMeshes.length; i++) {
+        const mesh = photoMeshes[i];
+        const data = photoData[i];
+
+        // Update angle (Keplerian orbit)
+        data.theta += data.speed * delta * 0.5;
+
+        let x, y, z;
+
+        if (state.chaosMode) {
+            // Chaos mode: photos also get affected
+            const chaosIntensity = (state.currentZoom - CONFIG.chaosThreshold) / (1 - CONFIG.chaosThreshold);
+            const explodeFactor = chaosIntensity * 15;
+            const noiseAmp = chaosIntensity * 1.5;
+
+            // Base orbit position
+            const bx = data.r * Math.cos(data.theta);
+            const bz = data.r * Math.sin(data.theta);
+
+            // Apply explosion
+            const cosTheta = Math.cos(data.theta);
+            const sinTheta = Math.sin(data.theta);
+
+            x = bx + cosTheta * explodeFactor;
+            z = bz + sinTheta * explodeFactor;
+            y = data.y + (Math.random() - 0.5) * explodeFactor;
+
+            // Add noise
+            x += (Math.random() - 0.5) * noiseAmp;
+            y += (Math.random() - 0.5) * noiseAmp;
+            z += (Math.random() - 0.5) * noiseAmp;
+
+            // Apply ring tilt
+            const cosX = Math.cos(data.ringTiltX);
+            const sinX = Math.sin(data.ringTiltX);
+            const cosZ = Math.cos(data.ringTiltZ);
+            const sinZ = Math.sin(data.ringTiltZ);
+
+            const y1 = y * cosX - z * sinX;
+            const z1 = y * sinX + z * cosX;
+
+            const x2 = x * cosZ - y1 * sinZ;
+            const y2 = x * sinZ + y1 * cosZ;
+
+            mesh.position.set(x2, y2, z1);
+
+            // Scale up in chaos mode
+            const scaleMultiplier = 1 + chaosIntensity * 0.5;
+            mesh.scale.set(
+                CONFIG.photoSize * (mesh.material.map.image.width / mesh.material.map.image.height) * scaleMultiplier,
+                CONFIG.photoSize * scaleMultiplier,
+                1
+            );
+        } else {
+            // Normal orbit with ring tilt
+            const bx = data.r * Math.cos(data.theta);
+            const bz = data.r * Math.sin(data.theta);
+
+            const cosX = Math.cos(data.ringTiltX);
+            const sinX = Math.sin(data.ringTiltX);
+            const cosZ = Math.cos(data.ringTiltZ);
+            const sinZ = Math.sin(data.ringTiltZ);
+
+            const y1 = data.y * cosX - bz * sinX;
+            const z1 = data.y * sinX + bz * cosX;
+
+            const x2 = bx * cosZ - y1 * sinZ;
+            const y2 = bx * sinZ + y1 * cosZ;
+
+            mesh.position.set(x2, y2, z1);
+
+            // Normal scale
+            const aspectRatio = mesh.material.map.image.width / mesh.material.map.image.height;
+            mesh.scale.set(CONFIG.photoSize * aspectRatio, CONFIG.photoSize, 1);
+        }
+
+        // Make photos always face the camera
+        mesh.lookAt(camera.position);
+
+        // Pulse glow effect based on time
+        const pulse = 1 + Math.sin(time * 2 + i) * 0.1;
+        mesh.material.opacity = 0.85 + Math.sin(time * 3 + i) * 0.1;
     }
 }
