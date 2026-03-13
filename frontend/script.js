@@ -4,6 +4,8 @@ let coreSystem, ringSystem;
 let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
+let photoPlanes = []; // Store uploaded photo planes
+let photoTextures = []; // Store photo textures
 
 // State
 const state = {
@@ -42,6 +44,13 @@ window.onload = () => {
             document.exitFullscreen();
         }
     });
+    
+    // Photo upload functionality
+    document.getElementById('upload-btn').addEventListener('click', () => {
+        document.getElementById('photo-upload').click();
+    });
+    
+    document.getElementById('photo-upload').addEventListener('change', handlePhotoUpload);
 };
 
 function initThree() {
@@ -438,6 +447,114 @@ function updateRings(delta) {
     }
     
     ringSystem.geometry.attributes.position.needsUpdate = true;
+    
+    // Update photo planes to follow the ring rotation
+    photoPlanes.forEach(plane => {
+        const ringIndex = plane.userData.ringIndex;
+        if (ringIndex !== undefined && ringData[ringIndex]) {
+            const data = ringData[ringIndex];
+            let x, y, z;
+            
+            if (state.chaosMode) {
+                // In chaos mode, photos also explode slightly
+                const chaosIntensity = (state.currentZoom - CONFIG.chaosThreshold) / (1 - CONFIG.chaosThreshold);
+                const explodeFactor = chaosIntensity * 10;
+                
+                const bx = data.r * Math.cos(data.theta);
+                const bz = data.r * Math.sin(data.theta);
+                
+                x = bx + Math.cos(data.theta) * explodeFactor;
+                z = bz + Math.sin(data.theta) * explodeFactor;
+                y = data.y + (Math.random() - 0.5) * explodeFactor * 0.5;
+            } else {
+                // Normal orbit
+                x = data.r * Math.cos(data.theta);
+                y = data.y;
+                z = data.r * Math.sin(data.theta);
+            }
+            
+            plane.position.set(x, y, z);
+            plane.lookAt(0, 0, 0); // Always face the center
+        }
+    });
+}
+
+function handlePhotoUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    // Process each file
+    Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const image = new Image();
+            image.onload = () => {
+                createPhotoPlane(image);
+            };
+            image.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+    
+    // Clear the input value to allow uploading the same file again
+    event.target.value = '';
+}
+
+function createPhotoPlane(image) {
+    // Create texture from image
+    const texture = new THREE.Texture(image);
+    texture.needsUpdate = true;
+    photoTextures.push(texture);
+    
+    // Calculate aspect ratio
+    const aspectRatio = image.width / image.height;
+    const planeSize = 1.5; // Base size, adjust as needed
+    
+    // Create plane geometry with correct aspect ratio
+    const geometry = new THREE.PlaneGeometry(planeSize * aspectRatio, planeSize);
+    
+    // Create material with glow effect
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide
+    });
+    
+    // Create glow effect using a slightly larger plane behind the photo
+    const glowGeometry = new THREE.PlaneGeometry(planeSize * aspectRatio * 1.2, planeSize * 1.2);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffcc,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
+    const glowPlane = new THREE.Mesh(glowGeometry, glowMaterial);
+    
+    // Create main photo plane
+    const photoPlane = new THREE.Mesh(geometry, material);
+    photoPlane.add(glowPlane); // Add glow as child
+    
+    // Find a random position on the ring
+    const randomIndex = Math.floor(Math.random() * CONFIG.ringCount);
+    const ringParticle = ringData[randomIndex];
+    
+    // Position the photo on the ring
+    const x = ringParticle.r * Math.cos(ringParticle.theta);
+    const y = ringParticle.y;
+    const z = ringParticle.r * Math.sin(ringParticle.theta);
+    
+    photoPlane.position.set(x, y, z);
+    
+    // Make the photo face the camera
+    photoPlane.lookAt(0, 0, 0);
+    
+    // Store reference to the ring data index so we can update position later
+    photoPlane.userData.ringIndex = randomIndex;
+    
+    // Add to scene and array
+    scene.add(photoPlane);
+    photoPlanes.push(photoPlane);
 }
 
 function updateCore(delta) {
