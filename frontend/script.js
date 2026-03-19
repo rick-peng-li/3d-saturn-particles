@@ -33,6 +33,7 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initColorControls();
     animate();
     
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
@@ -202,7 +203,6 @@ function initHandTracking() {
     let cameraStartFailed = false;
 
     const hands = new Hands({locateFile: (file) => {
-        // Use unpkg which is generally more reliable in some regions or fallback to standard
         return `https://unpkg.com/@mediapipe/hands/${file}`;
     }});
 
@@ -215,10 +215,8 @@ function initHandTracking() {
 
     hands.onResults(onHandResults);
 
-    // Initialize hands explicitly to catch errors early
     statusElement.innerText = "正在加载 AI 模型...";
     
-    // Start camera
     const cameraUtils = new Camera(videoElement, {
         onFrame: async () => {
             try {
@@ -236,7 +234,6 @@ function initHandTracking() {
             console.log("Camera started");
             statusElement.innerText = "模型加载中...请稍候";
             
-            // Timeout to hide loading if it takes too long (but warn user)
             setTimeout(() => {
                 if (!state.firstResultReceived) {
                     const loadingText = document.getElementById('loading-text');
@@ -251,6 +248,55 @@ function initHandTracking() {
             console.error("Camera error:", err);
             statusElement.innerText = "摄像头启动失败，请检查权限";
         });
+}
+
+function initColorControls() {
+    const coreColorInput = document.getElementById('core-color');
+    const ringColorInput = document.getElementById('ring-color');
+    
+    coreColorInput.addEventListener('input', (e) => {
+        updateCoreColors(e.target.value);
+    });
+    
+    ringColorInput.addEventListener('input', (e) => {
+        updateRingColors(e.target.value);
+    });
+}
+
+function updateCoreColors(hexColor) {
+    if (!coreSystem) return;
+    
+    const colors = coreSystem.geometry.attributes.color.array;
+    const baseColor = new THREE.Color(hexColor);
+    const darkColor = baseColor.clone().multiplyScalar(0.6);
+    
+    for (let i = 0; i < CONFIG.coreCount; i++) {
+        const data = coreData[i];
+        const r = Math.sqrt(data.originalX ** 2 + data.originalY ** 2 + data.originalZ ** 2);
+        const mixedColor = baseColor.clone().lerp(darkColor, r / 8);
+        colors[i * 3] = mixedColor.r;
+        colors[i * 3 + 1] = mixedColor.g;
+        colors[i * 3 + 2] = mixedColor.b;
+    }
+    
+    coreSystem.geometry.attributes.color.needsUpdate = true;
+}
+
+function updateRingColors(hexColor) {
+    if (!ringSystem) return;
+    
+    const colors = ringSystem.geometry.attributes.color.array;
+    const baseColor = new THREE.Color(hexColor);
+    
+    for (let i = 0; i < CONFIG.ringCount; i++) {
+        const variation = 0.8 + Math.random() * 0.4;
+        const c = baseColor.clone().multiplyScalar(variation);
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+    }
+    
+    ringSystem.geometry.attributes.color.needsUpdate = true;
 }
 
 function onHandResults(results) {
