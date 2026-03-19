@@ -34,8 +34,75 @@
              <p>🖐️ 张开手掌：放大 / 靠近 (激活混沌)</p>
              <p>✊ 握紧手掌：缩小 / 远离</p>
              <button id="fullscreen-btn">全屏体验</button>
+             <button id="custom-shape-btn">自定义粒子形状</button>
         </div>
         <div id="status">等待 AI 模型加载...</div>
+    </div>
+
+    <!-- Custom Shape Modal -->
+    <div id="custom-shape-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>自定义粒子形状</h2>
+                <button class="close-btn" id="close-modal">&times;</button>
+            </div>
+            
+            <div class="shape-tabs">
+                <button class="tab-btn active" data-tab="draw">🎨 手绘画板</button>
+                <button class="tab-btn" data-tab="upload">📷 上传图片</button>
+            </div>
+            
+            <!-- Draw Tab -->
+            <div class="tab-content active" id="draw-tab">
+                <div class="canvas-wrapper">
+                    <canvas id="draw-canvas" width="400" height="400"></canvas>
+                    <div class="canvas-hint">在画板上绘制你想要的粒子形状</div>
+                </div>
+                <div class="draw-controls">
+                    <button id="clear-draw">清空画板</button>
+                    <button id="use-draw-shape">使用此形状</button>
+                </div>
+            </div>
+            
+            <!-- Upload Tab -->
+            <div class="tab-content" id="upload-tab">
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="image-input" accept="image/*" hidden>
+                    <div class="upload-placeholder">
+                        <span class="upload-icon">📁</span>
+                        <p>点击或拖拽上传图片</p>
+                        <p class="upload-hint">支持 JPG, PNG, GIF 格式</p>
+                    </div>
+                    <canvas id="upload-preview" width="400" height="400"></canvas>
+                </div>
+                <div class="upload-controls">
+                    <button id="clear-upload">清除图片</button>
+                    <button id="use-upload-shape">使用图片轮廓</button>
+                </div>
+            </div>
+            
+            <!-- Color Settings -->
+            <div class="color-settings">
+                <h3>粒子颜色设置</h3>
+                <div class="color-picker-wrapper">
+                    <label>核心颜色:</label>
+                    <input type="color" id="core-color" value="#eebb44">
+                </div>
+                <div class="color-picker-wrapper">
+                    <label>光环颜色 1:</label>
+                    <input type="color" id="ring-color-1" value="#f0e68c">
+                </div>
+                <div class="color-picker-wrapper">
+                    <label>光环颜色 2:</label>
+                    <input type="color" id="ring-color-2" value="#ffffff">
+                </div>
+                <div class="color-picker-wrapper">
+                    <label>光环颜色 3:</label>
+                    <input type="color" id="ring-color-3" value="#a0522d">
+                </div>
+                <button id="apply-colors">应用颜色</button>
+            </div>
+        </div>
     </div>
 
     <video id="input_video" style="display: none;" playsinline></video>
