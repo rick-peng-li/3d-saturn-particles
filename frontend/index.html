@@ -33,6 +33,12 @@
         <div class="controls">
              <p>🖐️ 张开手掌：放大 / 靠近 (激活混沌)</p>
              <p>✊ 握紧手掌：缩小 / 远离</p>
+             <p>🤏 双手捏合：放大选中图片</p>
+             <div class="upload-container">
+                 <input type="file" id="image-upload" accept="image/*" multiple>
+                 <label for="image-upload" class="upload-btn">📷 上传图片</label>
+                 <span id="upload-count">已上传: 0张</span>
+             </div>
              <button id="fullscreen-btn">全屏体验</button>
         </div>
         <div id="status">等待 AI 模型加载...</div>
@@ -40,6 +46,9 @@
 
     <video id="input_video" style="display: none;" playsinline></video>
     <div id="canvas-container"></div>
+    <div id="image-overlay">
+        <img id="enlarged-image" src="" alt="放大图片">
+    </div>
 
     <script src="script.js"></script>
 </body>

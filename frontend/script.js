@@ -5,6 +5,14 @@ let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
 
+// Image-related variables
+let uploadedTextures = [];
+let imageSprites = [];
+let selectedImageIndex = -1;
+let isPinching = false;
+let pinchStartDistance = 0;
+let currentPinchScale = 1;
+
 // State
 const state = {
     targetZoom: 0.35,
@@ -12,7 +20,8 @@ const state = {
     handDetected: false,
     chaosMode: false,
     firstResultReceived: false,
-    firstFrameRendered: false
+    firstFrameRendered: false,
+    isImageEnlarged: false
 };
 
 // Configuration
@@ -33,6 +42,7 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initImageUpload();
     animate();
     
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
@@ -43,6 +53,121 @@ window.onload = () => {
         }
     });
 };
+
+// Initialize image upload
+function initImageUpload() {
+    const uploadInput = document.getElementById('image-upload');
+    uploadInput.addEventListener('change', handleImageUpload);
+}
+
+// Handle image upload
+function handleImageUpload(event) {
+    const files = event.target.files;
+    const uploadCount = document.getElementById('upload-count');
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        
+        reader.onload = (e) => {
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load(e.target.result, (texture) => {
+                texture.needsUpdate = true;
+                uploadedTextures.push(texture);
+                
+                // Create sprite for this image
+                createImageSprite(texture, uploadedTextures.length - 1);
+                
+                // Update upload count
+                uploadCount.textContent = `已上传: ${uploadedTextures.length}张`;
+            });
+        };
+        
+        reader.readAsDataURL(file);
+    }
+}
+
+// Create image sprite and place randomly on Saturn or rings
+function createImageSprite(texture, index) {
+    const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending
+    });
+    
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(2, 2, 1);
+    
+    // Randomly decide whether to place on Saturn core or on rings
+    const isOnCore = Math.random() > 0.5;
+    
+    if (isOnCore) {
+        // Place on Saturn core (sphere surface)
+        const r = 8 + Math.random() * 2;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        
+        sprite.position.x = r * Math.sin(phi) * Math.cos(theta);
+        sprite.position.y = r * Math.sin(phi) * Math.sin(theta);
+        sprite.position.z = r * Math.cos(phi);
+    } else {
+        // Place on rings
+        const r = CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner);
+        const theta = Math.random() * Math.PI * 2;
+        const y = (Math.random() - 0.5) * 0.5;
+        
+        sprite.position.x = r * Math.cos(theta);
+        sprite.position.y = y;
+        sprite.position.z = r * Math.sin(theta);
+        
+        // Apply ring rotation
+        sprite.position.applyQuaternion(ringSystem.quaternion);
+    }
+    
+    sprite.userData = {
+        index: index,
+        originalPosition: sprite.position.clone(),
+        isOnCore: isOnCore,
+        theta: Math.random() * Math.PI * 2,
+        r: isOnCore ? 8 + Math.random() * 2 : CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner),
+        speed: isOnCore ? 0.1 : 5.0 / Math.pow(isOnCore ? 10 : r, 1.5)
+    };
+    
+    imageSprites.push(sprite);
+    scene.add(sprite);
+}
+
+// Show enlarged image in center
+function showEnlargedImage() {
+    if (state.isImageEnlarged || uploadedTextures.length === 0) return;
+    
+    // Randomly select an image if none is selected
+    if (selectedImageIndex === -1) {
+        selectedImageIndex = Math.floor(Math.random() * uploadedTextures.length);
+    }
+    
+    const overlay = document.getElementById('image-overlay');
+    const enlargedImg = document.getElementById('enlarged-image');
+    
+    if (uploadedTextures[selectedImageIndex]) {
+        enlargedImg.src = uploadedTextures[selectedImageIndex].image.src;
+        // Force a reflow to ensure the transition works
+        overlay.offsetHeight;
+        overlay.classList.add('active');
+        state.isImageEnlarged = true;
+    }
+}
+
+// Hide enlarged image
+function hideEnlargedImage() {
+    if (!state.isImageEnlarged) return;
+    
+    const overlay = document.getElementById('image-overlay');
+    overlay.classList.remove('active');
+    state.isImageEnlarged = false;
+    selectedImageIndex = -1;
+}
 
 function initThree() {
     scene = new THREE.Scene();
@@ -207,7 +332,7 @@ function initHandTracking() {
     }});
 
     hands.setOptions({
-        maxNumHands: 1,
+        maxNumHands: 2,
         modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
@@ -266,52 +391,89 @@ function onHandResults(results) {
     
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         state.handDetected = true;
-        statusElement.innerText = "🖐️ 手势已识别 - 控制中";
-        statusElement.style.color = "#00ff88";
-
+        
+        // Use first detected hand for all gestures
         const landmarks = results.multiHandLandmarks[0];
         
-        // Calculate "Openness"
-        // Measure distance between Wrist (0) and Middle Finger Tip (12)
-        // Also Wrist (0) and Index Finger Tip (8)
+        // Check for pinch gesture: thumb (4) and index finger (8) are close
+        const thumbTip = landmarks[4];
+        const indexTip = landmarks[8];
         
-        // Simple distance check: 
-        // Wrist: 0
-        // Tips: 4 (Thumb), 8 (Index), 12 (Middle), 16 (Ring), 20 (Pinky)
+        // Calculate distance between thumb and index finger
+        const pinchDistance = Math.sqrt(
+            Math.pow(thumbTip.x - indexTip.x, 2) + 
+            Math.pow(thumbTip.y - indexTip.y, 2)
+        );
         
+        // Check if other fingers are open (distance from wrist is large enough)
         const wrist = landmarks[0];
-        const tips = [4, 8, 12, 16, 20];
-        let totalDist = 0;
+        const middleTip = landmarks[12];
+        const ringTip = landmarks[16];
+        const pinkyTip = landmarks[20];
         
-        tips.forEach(idx => {
-            const tip = landmarks[idx];
-            const d = Math.sqrt(
-                Math.pow(tip.x - wrist.x, 2) + 
-                Math.pow(tip.y - wrist.y, 2)
-            );
-            totalDist += d;
-        });
+        const middleDist = Math.sqrt(
+            Math.pow(middleTip.x - wrist.x, 2) + 
+            Math.pow(middleTip.y - wrist.y, 2)
+        );
         
-        const avgDist = totalDist / 5;
+        // Pinch gesture: thumb and index close, other fingers can be in any position
+        // Threshold: pinchDistance < 0.1 (close enough) 
+        // More lenient threshold for easier detection
+        const isPinchGesture = pinchDistance < 0.1;
         
-        // Mapping: 
-        // Closed fist ~ avgDist 0.1 - 0.2
-        // Open palm ~ avgDist 0.4 - 0.6
-        // Normalize to 0-1 range
-        
-        const minVal = 0.2;
-        const maxVal = 0.55;
-        let normalized = (avgDist - minVal) / (maxVal - minVal);
-        normalized = Math.max(0, Math.min(1, normalized));
-        
-        state.targetZoom = normalized; // 0 = small/far, 1 = big/close
+        if (isPinchGesture) {
+            statusElement.innerText = "🤏 捏合手势已识别 - 放大图片";
+            statusElement.style.color = "#ff6600";
+            
+            if (!isPinching) {
+                isPinching = true;
+                // Select a new random image when pinch starts
+                if (uploadedTextures.length > 0) {
+                    selectedImageIndex = Math.floor(Math.random() * uploadedTextures.length);
+                }
+            }
+            
+            // Show enlarged image when pinching
+            if (uploadedTextures.length > 0) {
+                showEnlargedImage();
+            }
+        } else {
+            // Not pinching - check for normal zoom control
+            hideEnlargedImage();
+            isPinching = false;
+            
+            statusElement.innerText = "🖐️ 手势已识别 - 控制中";
+            statusElement.style.color = "#00ff88";
 
+            // Calculate "Openness" for normal zoom control
+            const tips = [4, 8, 12, 16, 20];
+            let totalDist = 0;
+            
+            tips.forEach(idx => {
+                const tip = landmarks[idx];
+                const d = Math.sqrt(
+                    Math.pow(tip.x - wrist.x, 2) + 
+                    Math.pow(tip.y - wrist.y, 2)
+                );
+                totalDist += d;
+            });
+            
+            const avgDist = totalDist / 5;
+            
+            const minVal = 0.2;
+            const maxVal = 0.55;
+            let normalized = (avgDist - minVal) / (maxVal - minVal);
+            normalized = Math.max(0, Math.min(1, normalized));
+            
+            state.targetZoom = normalized;
+        }
     } else {
         state.handDetected = false;
+        isPinching = false;
+        hideEnlargedImage();
+        
         statusElement.innerText = "等待手势指令...";
         statusElement.style.color = "#ffaa00";
-        // Do not reset targetZoom immediately, let it stay or drift back slowly?
-        // Let's drift back to default (0.2) if no hand
         state.targetZoom = state.targetZoom * 0.95 + 0.35 * 0.05;
     }
 }
@@ -355,6 +517,7 @@ function animate() {
     // 5. Update Particles
     updateRings(delta);
     updateCore(delta);
+    updateImageSprites(delta);
 
     // Use composer instead of renderer
     composer.render();
@@ -480,4 +643,61 @@ function updateCore(delta) {
             coreSystem.geometry.attributes.position.needsUpdate = true;
         }
     }
+}
+
+function updateImageSprites(delta) {
+    const time = clock.getElapsedTime();
+    
+    imageSprites.forEach((sprite, index) => {
+        const data = sprite.userData;
+        
+        // Make sprites always face the camera
+        sprite.lookAt(camera.position);
+        
+        // Update position based on orbit
+        data.theta += data.speed * delta * 0.5;
+        
+        let x, y, z;
+        
+        if (state.chaosMode) {
+            const chaosIntensity = (state.currentZoom - CONFIG.chaosThreshold) / (1 - CONFIG.chaosThreshold);
+            const explodeFactor = chaosIntensity * 20; 
+            const noiseAmp = chaosIntensity * 2.0; 
+            
+            const bx = data.r * Math.cos(data.theta);
+            const bz = data.r * Math.sin(data.theta);
+            
+            x = bx + Math.cos(data.theta) * explodeFactor;
+            z = bz + Math.sin(data.theta) * explodeFactor;
+            y = data.originalPosition.y + (Math.random() - 0.5) * explodeFactor;
+            
+            x += (Math.random() - 0.5) * noiseAmp;
+            y += (Math.random() - 0.5) * noiseAmp;
+            z += (Math.random() - 0.5) * noiseAmp;
+        } else {
+            if (data.isOnCore) {
+                // Core orbit (rotate with core)
+                const rotationMatrix = new THREE.Matrix4();
+                rotationMatrix.makeRotationY(time * 0.05);
+                const rotatedPos = data.originalPosition.clone().applyMatrix4(rotationMatrix);
+                x = rotatedPos.x;
+                y = rotatedPos.y;
+                z = rotatedPos.z;
+            } else {
+                // Ring orbit
+                x = data.r * Math.cos(data.theta);
+                y = data.originalPosition.y;
+                z = data.r * Math.sin(data.theta);
+                
+                // Apply ring tilt
+                const position = new THREE.Vector3(x, y, z);
+                position.applyQuaternion(ringSystem.quaternion);
+                x = position.x;
+                y = position.y;
+                z = position.z;
+            }
+        }
+        
+        sprite.position.set(x, y, z);
+    });
 }

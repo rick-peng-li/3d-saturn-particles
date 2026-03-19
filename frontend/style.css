@@ -78,6 +78,100 @@ h1 {
     border-color: rgba(255, 255, 255, 0.5);
 }
 
+.upload-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+#image-upload {
+    display: none;
+}
+
+.upload-btn {
+    padding: 10px 20px;
+    background: rgba(100, 200, 255, 0.2);
+    border: 1px solid rgba(100, 200, 255, 0.4);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    text-align: center;
+    display: block;
+}
+
+.upload-btn:hover {
+    background: rgba(100, 200, 255, 0.35);
+    border-color: rgba(100, 200, 255, 0.6);
+}
+
+#upload-count {
+    font-size: 0.8rem;
+    color: #888;
+    text-align: center;
+}
+
+#image-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.95) 100%);
+    /* Ensure perfect centering */
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+#image-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#image-overlay img {
+    /* Perfect centering */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5) rotateY(15deg);
+    
+    max-width: 85vw;
+    max-height: 85vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 16px;
+    box-shadow: 0 0 100px rgba(255, 255, 255, 0.4),
+                0 0 200px rgba(255, 200, 100, 0.2),
+                0 20px 60px rgba(0, 0, 0, 0.5);
+    transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+                opacity 0.5s ease,
+                box-shadow 0.5s ease;
+    opacity: 0;
+    /* Prevent image from being too small on large screens */
+    min-width: 200px;
+    min-height: 200px;
+}
+
+#image-overlay.active img {
+    transform: translate(-50%, -50%) scale(1) rotateY(0deg);
+    opacity: 1;
+    box-shadow: 0 0 120px rgba(255, 255, 255, 0.5),
+                0 0 250px rgba(255, 200, 100, 0.3),
+                0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
 #status {
     margin-top: 16px;
     font-size: 0.8rem;
