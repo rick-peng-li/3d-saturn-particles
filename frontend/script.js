@@ -5,6 +5,15 @@ let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
 
+// Image related variables
+let uploadedImages = []; // Store multiple uploaded images
+let currentEnlargedImageIndex = -1; // Index of currently enlarged image
+let imageParticles = [];
+let isPinching = false;
+let pinchScale = 1;
+let initialPinchDistance = 0;
+let pinchStartTime = 0; // Track when pinch started for random selection
+
 // State
 const state = {
     targetZoom: 0.35,
@@ -33,6 +42,8 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initImageUpload();
+    initPinchGestures();
     animate();
     
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
@@ -43,6 +54,387 @@ window.onload = () => {
         }
     });
 };
+
+// Initialize image upload
+function initImageUpload() {
+    const uploadBtn = document.getElementById('upload-btn');
+    const imageInput = document.getElementById('image-input');
+    
+    uploadBtn.addEventListener('click', () => {
+        imageInput.click();
+    });
+    
+    imageInput.addEventListener('change', (e) => {
+        const files = e.target.files;
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (file && file.type.startsWith('image/')) {
+                handleImageUpload(file);
+            }
+        }
+        // Clear input to allow uploading same files again
+        imageInput.value = '';
+    });
+}
+
+// Handle image upload
+function handleImageUpload(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            // Store image with unique ID
+            const imageData = {
+                id: Date.now() + Math.random(),
+                image: img,
+                src: e.target.result
+            };
+            uploadedImages.push(imageData);
+            
+            // Distribute this image to particles
+            distributeSingleImageToParticles(imageData);
+            
+            const statusText = `已上传 ${uploadedImages.length} 张图片`;
+            document.getElementById('status').innerText = statusText;
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Create image texture
+function createImageTexture(img) {
+    const texture = new THREE.Texture(img);
+    texture.needsUpdate = true;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    return texture;
+}
+
+// Distribute single image to particles
+function distributeSingleImageToParticles(imageData) {
+    const img = imageData.image;
+    const imageId = imageData.id;
+    
+    // Create a canvas to extract pixel colors
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    
+    const imageDataPixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageDataPixels.data;
+    
+    // Number of particles per image (adjust based on performance)
+    const particlesPerImage = 100;
+    
+    // Create particles on Saturn's core (50%)
+    for (let i = 0; i < particlesPerImage / 2; i++) {
+        const particle = createImageParticle(pixels, canvas.width, canvas.height, true, imageId);
+        imageParticles.push(particle);
+        scene.add(particle);
+    }
+    
+    // Create particles on Saturn's rings (50%)
+    for (let i = 0; i < particlesPerImage / 2; i++) {
+        const particle = createImageParticle(pixels, canvas.width, canvas.height, false, imageId);
+        imageParticles.push(particle);
+        scene.add(particle);
+    }
+}
+
+// Create a single image particle
+function createImageParticle(pixels, imgWidth, imgHeight, isCore, imageId) {
+    // Get random pixel from image
+    const x = Math.floor(Math.random() * imgWidth);
+    const y = Math.floor(Math.random() * imgHeight);
+    const pixelIndex = (y * imgWidth + x) * 4;
+    
+    // Get pixel color (skip transparent pixels)
+    let r, g, b, a;
+    let attempts = 0;
+    do {
+        const rx = Math.floor(Math.random() * imgWidth);
+        const ry = Math.floor(Math.random() * imgHeight);
+        const idx = (ry * imgWidth + rx) * 4;
+        r = pixels[idx];
+        g = pixels[idx + 1];
+        b = pixels[idx + 2];
+        a = pixels[idx + 3];
+        attempts++;
+    } while (a < 128 && attempts < 100);
+    
+    // Create geometry based on location
+    let geometry, position;
+    
+    if (isCore) {
+        // Position on Saturn's core (sphere surface)
+        const radius = 8;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        
+        position = new THREE.Vector3(
+            radius * Math.sin(phi) * Math.cos(theta),
+            radius * Math.sin(phi) * Math.sin(theta),
+            radius * Math.cos(phi)
+        );
+        
+        geometry = new THREE.SphereGeometry(0.2, 8, 8);
+    } else {
+        // Position on Saturn's rings
+        const r = CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner);
+        const theta = Math.random() * Math.PI * 2;
+        const y = (Math.random() - 0.5) * 0.5;
+        
+        position = new THREE.Vector3(
+            r * Math.cos(theta),
+            y,
+            r * Math.sin(theta)
+        );
+        
+        geometry = new THREE.PlaneGeometry(0.3, 0.3);
+    }
+    
+    const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(r / 255, g / 255, b / 255),
+        transparent: true,
+        opacity: a / 255,
+        side: THREE.DoubleSide
+    });
+    
+    const particle = new THREE.Mesh(geometry, material);
+    particle.position.copy(position);
+    
+    // Store original position and add random rotation
+    particle.userData = {
+        originalPosition: position.clone(),
+        rotationSpeed: {
+            x: (Math.random() - 0.5) * 0.02,
+            y: (Math.random() - 0.5) * 0.02,
+            z: (Math.random() - 0.5) * 0.02
+        },
+        isCore: isCore,
+        theta: Math.random() * Math.PI * 2,
+        r: isCore ? 8 : position.length(),
+        imageId: imageId // Store which image this particle belongs to
+    };
+    
+    return particle;
+}
+
+// Initialize pinch gestures
+function initPinchGestures() {
+    // For touch devices
+    document.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+    
+    // For mouse wheel (as alternative zoom)
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    
+    // For desktop testing with mouse (hold Alt + drag)
+    let isAltDragging = false;
+    let lastMouseY = 0;
+    
+    document.addEventListener('mousedown', (e) => {
+        if (e.altKey && uploadedImages.length > 0) {
+            isAltDragging = true;
+            lastMouseY = e.clientY;
+            // Randomly select an image when Alt+drag starts
+            selectRandomImage();
+            showEnlargedImage();
+            e.preventDefault();
+        }
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (isAltDragging && uploadedImages.length > 0) {
+            const deltaY = lastMouseY - e.clientY;
+            pinchScale += deltaY * 0.01;
+            pinchScale = Math.max(0.5, Math.min(3, pinchScale));
+            updateEnlargedImage();
+            lastMouseY = e.clientY;
+        }
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isAltDragging) {
+            isAltDragging = false;
+            pinchScale = 1;
+            hideEnlargedImage();
+        }
+    });
+
+    // Add keyboard shortcut for testing (press 'p' key)
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'p' && uploadedImages.length > 0) {
+            if (!isPinching) {
+                isPinching = true;
+                selectRandomImage();
+                showEnlargedImage();
+                pinchScale = 1.5;
+                updateEnlargedImage();
+            }
+        }
+    });
+    
+    // Release pinch when 'p' key released
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'p') {
+            if (isPinching) {
+                isPinching = false;
+                pinchScale = 1;
+                hideEnlargedImage();
+            }
+        }
+        // Also support '+' and '-' keys for zoom control (while 'p' is held down)
+        if (e.key === '=' || e.key === '+') {
+            if (isPinching) {
+                pinchScale = Math.min(3, pinchScale + 0.2);
+                updateEnlargedImage();
+            }
+        }
+        if (e.key === '-') {
+            if (isPinching) {
+                pinchScale = Math.max(0.5, pinchScale - 0.2);
+                updateEnlargedImage();
+            }
+        }
+    });
+
+    // Use keydown for continuous zoom
+    document.addEventListener('keydown', (e) => {
+        if (e.key === '=' || e.key === '+') {
+            if (isPinching) {
+                pinchScale = Math.min(3, pinchScale + 0.2);
+                updateEnlargedImage();
+            }
+        }
+        if (e.key === '-') {
+            if (isPinching) {
+                pinchScale = Math.max(0.5, pinchScale - 0.2);
+                updateEnlargedImage();
+            }
+        }
+    });
+}
+
+let touchStartDistance = 0;
+
+function handleTouchStart(e) {
+    if (e.touches.length === 2 && uploadedImages.length > 0) {
+        isPinching = true;
+        touchStartDistance = getDistanceBetweenTouches(e.touches);
+        initialPinchDistance = touchStartDistance;
+        pinchStartTime = Date.now();
+        // Randomly select an image when pinch starts
+        selectRandomImage();
+        showEnlargedImage();
+        e.preventDefault();
+    }
+}
+
+function handleTouchMove(e) {
+    if (isPinching && e.touches.length === 2) {
+        const currentDistance = getDistanceBetweenTouches(e.touches);
+        pinchScale = currentDistance / initialPinchDistance;
+        pinchScale = Math.max(0.5, Math.min(3, pinchScale));
+        updateEnlargedImage();
+        e.preventDefault();
+    }
+}
+
+function handleTouchEnd(e) {
+    if (e.touches.length < 2) {
+        isPinching = false;
+        pinchScale = 1;
+        hideEnlargedImage();
+    }
+}
+
+function handleWheel(e) {
+    if (uploadedImages.length > 0 && e.altKey) {
+        if (!isPinching) {
+            isPinching = true;
+            selectRandomImage();
+            showEnlargedImage();
+        }
+        pinchScale += e.deltaY * -0.001;
+        pinchScale = Math.max(0.5, Math.min(3, pinchScale));
+        updateEnlargedImage();
+        e.preventDefault();
+        
+        // Auto hide after 2 seconds of inactivity
+        clearTimeout(window.wheelTimeout);
+        window.wheelTimeout = setTimeout(() => {
+            isPinching = false;
+            pinchScale = 1;
+            hideEnlargedImage();
+        }, 2000);
+    }
+}
+
+function getDistanceBetweenTouches(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Select a random image from uploaded images
+function selectRandomImage() {
+    if (uploadedImages.length === 0) return;
+    
+    // Generate a random index
+    const randomIndex = Math.floor(Math.random() * uploadedImages.length);
+    currentEnlargedImageIndex = randomIndex;
+}
+
+function showEnlargedImage() {
+    const overlay = document.getElementById('image-overlay');
+    const img = document.getElementById('enlarged-image');
+    
+    if (currentEnlargedImageIndex >= 0 && currentEnlargedImageIndex < uploadedImages.length) {
+        const selectedImage = uploadedImages[currentEnlargedImageIndex];
+        img.src = selectedImage.src;
+        
+        // Remove zooming class for initial entrance animation
+        img.classList.remove('zooming');
+        
+        // Trigger entrance animation
+        overlay.classList.remove('hidden');
+        overlay.style.display = 'flex';
+        overlay.offsetHeight; // Force reflow
+        overlay.classList.add('active');
+    }
+}
+
+function updateEnlargedImage() {
+    const img = document.getElementById('enlarged-image');
+    // Add zooming class for smoother zooming during pinch
+    img.classList.add('zooming');
+    img.style.transform = `translate(-50%, -50%) scale(${pinchScale})`;
+}
+
+function hideEnlargedImage() {
+    const overlay = document.getElementById('image-overlay');
+    const img = document.getElementById('enlarged-image');
+    
+    // Remove zooming class to use smooth exit animation
+    img.classList.remove('zooming');
+    
+    // Trigger exit animation
+    overlay.classList.remove('active');
+    
+    // Wait for animation to complete before hiding
+    setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.style.display = 'none';
+        // Reset scale for next time
+        img.style.transform = 'scale(1)';
+        currentEnlargedImageIndex = -1;
+    }, 400); // Match CSS transition duration
+}
 
 function initThree() {
     scene = new THREE.Scene();
@@ -207,7 +599,7 @@ function initHandTracking() {
     }});
 
     hands.setOptions({
-        maxNumHands: 1,
+        maxNumHands: 2,
         modelComplexity: 1,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
@@ -266,52 +658,126 @@ function onHandResults(results) {
     
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         state.handDetected = true;
-        statusElement.innerText = "🖐️ 手势已识别 - 控制中";
-        statusElement.style.color = "#00ff88";
-
-        const landmarks = results.multiHandLandmarks[0];
         
-        // Calculate "Openness"
-        // Measure distance between Wrist (0) and Middle Finger Tip (12)
-        // Also Wrist (0) and Index Finger Tip (8)
+        // Check each hand for pinch gesture (thumb + index finger pinch)
+        let pinchDetected = false;
+        let pinchIntensity = 0;
         
-        // Simple distance check: 
-        // Wrist: 0
-        // Tips: 4 (Thumb), 8 (Index), 12 (Middle), 16 (Ring), 20 (Pinky)
-        
-        const wrist = landmarks[0];
-        const tips = [4, 8, 12, 16, 20];
-        let totalDist = 0;
-        
-        tips.forEach(idx => {
-            const tip = landmarks[idx];
-            const d = Math.sqrt(
-                Math.pow(tip.x - wrist.x, 2) + 
-                Math.pow(tip.y - wrist.y, 2)
+        for (let handIndex = 0; handIndex < results.multiHandLandmarks.length; handIndex++) {
+            const landmarks = results.multiHandLandmarks[handIndex];
+            
+            // Check for pinch gesture: thumb tip (4) and index finger tip (8)
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            
+            // Calculate distance between thumb and index finger tips
+            const pinchDistance = Math.sqrt(
+                Math.pow(thumbTip.x - indexTip.x, 2) + 
+                Math.pow(thumbTip.y - indexTip.y, 2)
             );
-            totalDist += d;
-        });
+            
+            // Also check if other fingers are open (to distinguish from fist)
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+            const wrist = landmarks[0];
+            
+            const middleDist = Math.sqrt(
+                Math.pow(middleTip.x - wrist.x, 2) + 
+                Math.pow(middleTip.y - wrist.y, 2)
+            );
+            
+            // Pinch detection logic:
+            // - Thumb and index finger tips are close together
+            // - Other fingers are relatively open (not a closed fist)
+            const isPinchGesture = pinchDistance < 0.15 && middleDist > 0.15;
+            
+            if (isPinchGesture && uploadedImages.length > 0) {
+                pinchDetected = true;
+                // Calculate pinch intensity for scaling: closer pinch = larger scale
+                // Normalize pinchDistance (0.02 to 0.15) to scale (3 to 0.5)
+                const normalizedDistance = Math.max(0.02, Math.min(0.15, pinchDistance));
+                pinchIntensity = 0.5 + (0.15 - normalizedDistance) * 20;
+                pinchIntensity = Math.max(0.5, Math.min(3, pinchIntensity));
+                break;
+            }
+        }
         
-        const avgDist = totalDist / 5;
-        
-        // Mapping: 
-        // Closed fist ~ avgDist 0.1 - 0.2
-        // Open palm ~ avgDist 0.4 - 0.6
-        // Normalize to 0-1 range
-        
-        const minVal = 0.2;
-        const maxVal = 0.55;
-        let normalized = (avgDist - minVal) / (maxVal - minVal);
-        normalized = Math.max(0, Math.min(1, normalized));
-        
-        state.targetZoom = normalized; // 0 = small/far, 1 = big/close
+        if (pinchDetected) {
+            statusElement.innerText = "👆 捏合手势 - 放大图片";
+            statusElement.style.color = "#00aaff";
+            
+            if (!isPinching) {
+                isPinching = true;
+                pinchStartTime = Date.now();
+                // Randomly select an image when pinch starts
+                selectRandomImage();
+                showEnlargedImage();
+            }
+            
+            // Update pinch scale
+            pinchScale = pinchIntensity;
+            updateEnlargedImage();
+        } else if (results.multiHandLandmarks.length === 1) {
+            // Single hand without pinch: normal zoom control
+            statusElement.innerText = "🖐️ 手势已识别 - 控制中";
+            statusElement.style.color = "#00ff88";
+            
+            // Stop pinching if pinch gesture ends
+            if (isPinching) {
+                isPinching = false;
+                pinchScale = 1;
+                hideEnlargedImage();
+            }
+
+            const landmarks = results.multiHandLandmarks[0];
+            
+            // Calculate "Openness"
+            const wrist = landmarks[0];
+            const tips = [4, 8, 12, 16, 20];
+            let totalDist = 0;
+            
+            tips.forEach(idx => {
+                const tip = landmarks[idx];
+                const d = Math.sqrt(
+                    Math.pow(tip.x - wrist.x, 2) + 
+                    Math.pow(tip.y - wrist.y, 2)
+                );
+                totalDist += d;
+            });
+            
+            const avgDist = totalDist / 5;
+            
+            const minVal = 0.2;
+            const maxVal = 0.55;
+            let normalized = (avgDist - minVal) / (maxVal - minVal);
+            normalized = Math.max(0, Math.min(1, normalized));
+            
+            state.targetZoom = normalized; // 0 = small/far, 1 = big/close
+        } else {
+            // Multiple hands but no pinch detected
+            if (isPinching) {
+                isPinching = false;
+                pinchScale = 1;
+                hideEnlargedImage();
+            }
+            statusElement.innerText = "🖐️ 手势已识别 - 控制中";
+            statusElement.style.color = "#00ff88";
+        }
 
     } else {
         state.handDetected = false;
         statusElement.innerText = "等待手势指令...";
         statusElement.style.color = "#ffaa00";
-        // Do not reset targetZoom immediately, let it stay or drift back slowly?
-        // Let's drift back to default (0.2) if no hand
+        
+        // Stop pinching if no hands
+        if (isPinching) {
+            isPinching = false;
+            pinchScale = 1;
+            hideEnlargedImage();
+        }
+        
+        // Drift back to default zoom
         state.targetZoom = state.targetZoom * 0.95 + 0.35 * 0.05;
     }
 }
@@ -355,6 +821,7 @@ function animate() {
     // 5. Update Particles
     updateRings(delta);
     updateCore(delta);
+    updateImageParticles(delta);
 
     // Use composer instead of renderer
     composer.render();
@@ -480,4 +947,45 @@ function updateCore(delta) {
             coreSystem.geometry.attributes.position.needsUpdate = true;
         }
     }
+}
+
+// Update image particles
+function updateImageParticles(delta) {
+    if (imageParticles.length === 0) return;
+    
+    const time = clock.getElapsedTime();
+    
+    imageParticles.forEach(particle => {
+        const userData = particle.userData;
+        
+        // Rotate the particle
+        particle.rotation.x += userData.rotationSpeed.x;
+        particle.rotation.y += userData.rotationSpeed.y;
+        particle.rotation.z += userData.rotationSpeed.z;
+        
+        if (state.chaosMode) {
+            // Chaos mode: particles move around randomly
+            const chaosIntensity = (state.currentZoom - CONFIG.chaosThreshold) / (1 - CONFIG.chaosThreshold);
+            const jitter = chaosIntensity * 2.0;
+            
+            particle.position.x = userData.originalPosition.x + (Math.random() - 0.5) * jitter;
+            particle.position.y = userData.originalPosition.y + (Math.random() - 0.5) * jitter;
+            particle.position.z = userData.originalPosition.z + (Math.random() - 0.5) * jitter;
+        } else {
+            // Normal mode: particles orbit with the rings/core
+            if (userData.isCore) {
+                // Rotate with the core
+                userData.theta += delta * 0.05;
+                const radius = 8;
+                particle.position.x = radius * Math.sin(userData.theta) * Math.cos(time * 0.1);
+                particle.position.y = radius * Math.sin(userData.theta) * Math.sin(time * 0.1);
+                particle.position.z = radius * Math.cos(userData.theta);
+            } else {
+                // Orbit with the rings
+                userData.theta += (5.0 / Math.pow(userData.r, 1.5)) * delta * 0.5;
+                particle.position.x = userData.r * Math.cos(userData.theta);
+                particle.position.z = userData.r * Math.sin(userData.theta);
+            }
+        }
+    });
 }
