@@ -15,6 +15,12 @@ const state = {
     firstFrameRendered: false
 };
 
+// Color State
+const colorState = {
+    coreColor: '#eebb44',
+    ringColor: '#f0e68c'
+};
+
 // Configuration
 const CONFIG = {
     coreCount: 30000, // Increased for density
@@ -33,8 +39,9 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initColorPickers();
     animate();
-    
+
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen();
@@ -43,6 +50,58 @@ window.onload = () => {
         }
     });
 };
+
+// Initialize Color Pickers
+function initColorPickers() {
+    const coreColorInput = document.getElementById('core-color');
+    const ringColorInput = document.getElementById('ring-color');
+
+    coreColorInput.addEventListener('input', (e) => {
+        colorState.coreColor = e.target.value;
+        updateCoreColors();
+    });
+
+    ringColorInput.addEventListener('input', (e) => {
+        colorState.ringColor = e.target.value;
+        updateRingColors();
+    });
+}
+
+// Update Core Colors
+function updateCoreColors() {
+    const baseColor = new THREE.Color(colorState.coreColor);
+    const colors = coreSystem.geometry.attributes.color.array;
+
+    for (let i = 0; i < CONFIG.coreCount; i++) {
+        const data = coreData[i];
+        const r = Math.sqrt(data.originalX * data.originalX + data.originalY * data.originalY + data.originalZ * data.originalZ);
+        // 根据半径调整亮度，中心亮，边缘暗
+        const brightness = 1.2 - (r / 8) * 0.4;
+        const finalColor = baseColor.clone().multiplyScalar(brightness);
+        colors[i * 3] = finalColor.r;
+        colors[i * 3 + 1] = finalColor.g;
+        colors[i * 3 + 2] = finalColor.b;
+    }
+
+    coreSystem.geometry.attributes.color.needsUpdate = true;
+}
+
+// Update Ring Colors
+function updateRingColors() {
+    const baseColor = new THREE.Color(colorState.ringColor);
+    const colors = ringSystem.geometry.attributes.color.array;
+
+    for (let i = 0; i < CONFIG.ringCount; i++) {
+        // 添加一些随机变化让环更有层次感
+        const variation = 0.8 + Math.random() * 0.4;
+        const finalColor = baseColor.clone().multiplyScalar(variation);
+        colors[i * 3] = finalColor.r;
+        colors[i * 3 + 1] = finalColor.g;
+        colors[i * 3 + 2] = finalColor.b;
+    }
+
+    ringSystem.geometry.attributes.color.needsUpdate = true;
+}
 
 function initThree() {
     scene = new THREE.Scene();
@@ -89,9 +148,8 @@ function createParticles() {
     const coreGeo = new THREE.BufferGeometry();
     const corePos = [];
     const coreColors = [];
-    
-    const color1 = new THREE.Color(0xeebb44); // Golden
-    const color2 = new THREE.Color(0xcc8822); // Darker Orange
+
+    const baseCoreColor = new THREE.Color(colorState.coreColor);
 
     for (let i = 0; i < CONFIG.coreCount; i++) {
         // Random point in sphere
@@ -104,10 +162,11 @@ function createParticles() {
         const z = r * Math.cos(phi);
 
         corePos.push(x, y, z);
-        
-        // Color gradient based on radius (center is brighter/whiter, edge is darker)
-        const mixedColor = color1.clone().lerp(color2, r / 8);
-        coreColors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+
+        // Color gradient based on radius (center is brighter, edge is darker)
+        const brightness = 1.2 - (r / 8) * 0.4;
+        const finalColor = baseCoreColor.clone().multiplyScalar(brightness);
+        coreColors.push(finalColor.r, finalColor.g, finalColor.b);
 
         coreData.push({
             originalX: x,
@@ -138,17 +197,15 @@ function createParticles() {
     const ringPos = [];
     const ringColors = [];
 
-    const ringColor1 = new THREE.Color(0xf0e68c); // Khaki
-    const ringColor2 = new THREE.Color(0xffffff); // White
-    const ringColor3 = new THREE.Color(0xa0522d); // Sienna
+    const baseRingColor = new THREE.Color(colorState.ringColor);
 
     for (let i = 0; i < CONFIG.ringCount; i++) {
         // Random radius between inner and outer
         const r = CONFIG.ringInner + Math.random() * (CONFIG.ringOuter - CONFIG.ringInner);
         const theta = Math.random() * Math.PI * 2;
-        
+
         // Slight vertical spread for volume
-        const y = (Math.random() - 0.5) * 0.5; 
+        const y = (Math.random() - 0.5) * 0.5;
 
         const x = r * Math.cos(theta);
         const z = r * Math.sin(theta);
@@ -157,7 +214,7 @@ function createParticles() {
 
         // Keplerian Speed: v ~ 1/sqrt(r) -> angular speed w ~ 1/r^1.5
         const speed = 5.0 / Math.pow(r, 1.5);
-        
+
         ringData.push({
             r: r,
             theta: theta,
@@ -166,14 +223,9 @@ function createParticles() {
             originalY: y
         });
 
-        // Color based on bands
-        let c;
-        if (i % 3 === 0) c = ringColor1;
-        else if (i % 3 === 1) c = ringColor2;
-        else c = ringColor3;
-        
-        // Add some variation
-        c = c.clone().multiplyScalar(0.8 + Math.random() * 0.4);
+        // Color with variation
+        const variation = 0.8 + Math.random() * 0.4;
+        const c = baseRingColor.clone().multiplyScalar(variation);
         ringColors.push(c.r, c.g, c.b);
     }
 
