@@ -4,6 +4,14 @@ let coreSystem, ringSystem;
 let clock = new THREE.Clock();
 let ringData = []; // Store initial data for physics calculations
 let coreData = [];
+let originalCoreColors = []; // Store original core colors for modification
+let originalRingColors = []; // Store original ring colors for modification
+
+// Color State
+const colorState = {
+    coreColor: new THREE.Color(0xeebb44),
+    ringColor: new THREE.Color(0xf0e68c)
+};
 
 // State
 const state = {
@@ -33,6 +41,7 @@ window.onload = () => {
     initThree();
     createParticles();
     initHandTracking();
+    initColorPickers();
     animate();
     
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
@@ -43,6 +52,65 @@ window.onload = () => {
         }
     });
 };
+
+function initColorPickers() {
+    const coreColorPicker = document.getElementById('core-color');
+    const ringColorPicker = document.getElementById('ring-color');
+
+    coreColorPicker.addEventListener('input', (e) => {
+        updateCoreColor(e.target.value);
+    });
+
+    ringColorPicker.addEventListener('input', (e) => {
+        updateRingColor(e.target.value);
+    });
+}
+
+function updateCoreColor(hexColor) {
+    colorState.coreColor.set(hexColor);
+    const darkerColor = colorState.coreColor.clone().multiplyScalar(0.7); // Darker version for gradient
+    const colors = coreSystem.geometry.attributes.color.array;
+    
+    for (let i = 0; i < CONFIG.coreCount; i++) {
+        const originalRatio = originalCoreColors[i];
+        // Use index for consistent gradient
+        const color = colorState.coreColor.clone().lerp(darkerColor, i / CONFIG.coreCount);
+        
+        colors[i * 3] = color.r * originalRatio.r;
+        colors[i * 3 + 1] = color.g * originalRatio.g;
+        colors[i * 3 + 2] = color.b * originalRatio.b;
+    }
+    
+    coreSystem.geometry.attributes.color.needsUpdate = true;
+}
+
+function updateRingColor(hexColor) {
+    colorState.ringColor.set(hexColor);
+    const colors = ringSystem.geometry.attributes.color.array;
+    
+    for (let i = 0; i < CONFIG.ringCount; i++) {
+        const originalRatio = originalRingColors[i];
+        let color;
+        
+        // Create variation similar to original
+        if (i % 3 === 0) {
+            color = colorState.ringColor.clone();
+        } else if (i % 3 === 1) {
+            color = colorState.ringColor.clone().multiplyScalar(1.2); // Lighter
+        } else {
+            color = colorState.ringColor.clone().multiplyScalar(0.6); // Darker
+        }
+        
+        // Add some variation
+        color.multiplyScalar(0.8 + Math.random() * 0.4);
+        
+        colors[i * 3] = Math.min(1, color.r * originalRatio.r);
+        colors[i * 3 + 1] = Math.min(1, color.g * originalRatio.g);
+        colors[i * 3 + 2] = Math.min(1, color.b * originalRatio.b);
+    }
+    
+    ringSystem.geometry.attributes.color.needsUpdate = true;
+}
 
 function initThree() {
     scene = new THREE.Scene();
@@ -108,6 +176,13 @@ function createParticles() {
         // Color gradient based on radius (center is brighter/whiter, edge is darker)
         const mixedColor = color1.clone().lerp(color2, r / 8);
         coreColors.push(mixedColor.r, mixedColor.g, mixedColor.b);
+
+        // Store original color ratio for later modification
+        originalCoreColors.push({
+            r: mixedColor.r / color1.r,
+            g: mixedColor.g / color1.g,
+            b: mixedColor.b / color1.b
+        });
 
         coreData.push({
             originalX: x,
@@ -175,6 +250,13 @@ function createParticles() {
         // Add some variation
         c = c.clone().multiplyScalar(0.8 + Math.random() * 0.4);
         ringColors.push(c.r, c.g, c.b);
+
+        // Store original color ratio for later modification
+        originalRingColors.push({
+            r: c.r / ringColor1.r,
+            g: c.g / ringColor1.g,
+            b: c.b / ringColor1.b
+        });
     }
 
     ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPos, 3));
