@@ -78,6 +78,42 @@ h1 {
     border-color: rgba(255, 255, 255, 0.5);
 }
 
+.color-picker-container {
+    margin: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.color-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.color-picker-item label {
+    font-size: 0.9rem;
+    color: #ddd;
+    white-space: nowrap;
+}
+
+.color-picker-item input[type="color"] {
+    width: 50px;
+    height: 35px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    padding: 2px;
+    transition: all 0.3s ease;
+}
+
+.color-picker-item input[type="color"]:hover {
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: scale(1.05);
+}
+
 #status {
     margin-top: 16px;
     font-size: 0.8rem;
