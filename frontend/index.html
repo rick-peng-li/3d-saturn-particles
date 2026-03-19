@@ -33,9 +33,19 @@
         <div class="controls">
              <p>🖐️ 张开手掌：放大 / 靠近 (激活混沌)</p>
              <p>✊ 握紧手掌：缩小 / 远离</p>
+             <p>🤏 双指捏合：放大选中图片</p>
+             <div class="upload-area">
+                 <input type="file" id="image-upload" accept="image/*" multiple style="display: none;">
+                 <button id="upload-btn">📷 上传图片（可多选）</button>
+             </div>
              <button id="fullscreen-btn">全屏体验</button>
         </div>
         <div id="status">等待 AI 模型加载...</div>
+    </div>
+    
+    <!-- 放大图片显示容器 -->
+    <div id="image-modal" class="image-modal">
+        <img id="zoomed-image" src="" alt="放大图片">
     </div>
 
     <video id="input_video" style="display: none;" playsinline></video>
