@@ -34,8 +34,58 @@
              <p>🖐️ 张开手掌：放大 / 靠近 (激活混沌)</p>
              <p>✊ 握紧手掌：缩小 / 远离</p>
              <button id="fullscreen-btn">全屏体验</button>
+             <button id="custom-shape-btn">自定义粒子形状</button>
         </div>
         <div id="status">等待 AI 模型加载...</div>
+    </div>
+
+    <!-- Custom Shape Panel -->
+    <div id="custom-shape-panel" class="panel-hidden">
+        <div class="panel-header">
+            <h2>自定义粒子形状</h2>
+            <button id="close-panel-btn">×</button>
+        </div>
+        
+        <div class="shape-options">
+            <div class="option-group">
+                <label>选择形状类型：</label>
+                <div class="shape-buttons">
+                    <button id="draw-mode-btn" class="shape-btn">手绘形状</button>
+                    <button id="upload-mode-btn" class="shape-btn">上传图片</button>
+                </div>
+            </div>
+
+            <div class="option-group">
+                <label>粒子颜色：</label>
+                <input type="color" id="particle-color" value="#00ffff">
+            </div>
+
+            <!-- Drawing Canvas -->
+            <div id="draw-section" class="section-hidden">
+                <label>在下方画板绘制形状：</label>
+                <canvas id="draw-canvas" width="300" height="300"></canvas>
+                <div class="canvas-controls">
+                    <button id="clear-canvas">清除画板</button>
+                    <button id="apply-draw-shape">应用手绘形状</button>
+                </div>
+            </div>
+
+            <!-- Image Upload -->
+            <div id="upload-section" class="section-hidden">
+                <label>上传图片识别轮廓：</label>
+                <div class="upload-area">
+                    <input type="file" id="image-upload" accept="image/*" style="display: none;">
+                    <button id="upload-trigger-btn">选择图片</button>
+                    <span id="file-name" class="file-name">未选择文件</span>
+                </div>
+                <canvas id="image-canvas" width="300" height="300"></canvas>
+                <div class="canvas-controls">
+                    <button id="apply-image-shape">应用图片轮廓</button>
+                </div>
+            </div>
+
+            <button id="reset-shape">重置为默认形状</button>
+        </div>
     </div>
 
     <video id="input_video" style="display: none;" playsinline></video>
