@@ -34,8 +34,63 @@
              <p>🖐️ 张开手掌：放大 / 靠近 (激活混沌)</p>
              <p>✊ 握紧手掌：缩小 / 远离</p>
              <button id="fullscreen-btn">全屏体验</button>
+             <button id="custom-shape-btn" class="custom-btn">🎨 自定义粒子形状</button>
         </div>
         <div id="status">等待 AI 模型加载...</div>
+    </div>
+
+    <!-- 自定义粒子形状面板 -->
+    <div id="custom-shape-panel" class="panel hidden">
+        <div class="panel-header">
+            <h2>自定义粒子形状</h2>
+            <button id="close-panel-btn" class="close-btn">×</button>
+        </div>
+        
+        <div class="panel-tabs">
+            <button class="tab-btn active" data-tab="draw">✏️ 手绘画板</button>
+            <button class="tab-btn" data-tab="upload">📷 上传图片</button>
+        </div>
+
+        <!-- 手绘画板 -->
+        <div id="draw-tab" class="tab-content active">
+            <div class="draw-controls">
+                <label>画笔大小: <input type="range" id="brush-size" min="2" max="30" value="8"></label>
+                <button id="clear-canvas-btn" class="action-btn">🗑️ 清空画板</button>
+            </div>
+            <canvas id="draw-canvas" width="400" height="400"></canvas>
+            <button id="apply-draw-btn" class="apply-btn">✨ 应用手绘形状</button>
+        </div>
+
+        <!-- 上传图片 -->
+        <div id="upload-tab" class="tab-content hidden">
+            <div class="upload-area" id="upload-area">
+                <div class="upload-icon">📁</div>
+                <p>拖拽图片到此处或点击上传</p>
+                <p class="upload-hint">支持 PNG, JPG, SVG 格式</p>
+                <input type="file" id="image-upload" accept="image/*" hidden>
+            </div>
+            <canvas id="preview-canvas" width="400" height="400" class="hidden"></canvas>
+            <button id="apply-upload-btn" class="apply-btn hidden">✨ 应用图片轮廓</button>
+        </div>
+
+        <!-- 颜色设置 -->
+        <div class="color-settings">
+            <h3>粒子颜色设置</h3>
+            <div class="color-row">
+                <label>主色调: <input type="color" id="primary-color" value="#eebb44"></label>
+                <span class="color-preview" id="primary-preview"></span>
+            </div>
+            <div class="color-row">
+                <label>次色调: <input type="color" id="secondary-color" value="#cc8822"></label>
+                <span class="color-preview" id="secondary-preview"></span>
+            </div>
+            <div class="color-row">
+                <label>发光色: <input type="color" id="glow-color" value="#ffffff"></label>
+                <span class="color-preview" id="glow-preview"></span>
+            </div>
+        </div>
+
+        <button id="reset-shape-btn" class="reset-btn">🔄 重置为默认形状</button>
     </div>
 
     <video id="input_video" style="display: none;" playsinline></video>
